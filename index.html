@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Card Game Score Tracker</title>
+  <style>
+    /* Basic Reset and Styling */
+    body {
+      font-family: Arial, sans-serif;
+      background: #f3f3f3;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    .container {
+      max-width: 1200px;
+      margin: auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0px 0px 10px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    label {
+      margin-right: 15px;
+      font-size: 16px;
+    }
+    input[type="text"], input[type="number"] {
+      padding: 5px;
+      font-size: 16px;
+      margin-right: 10px;
+    }
+    button {
+      padding: 5px 15px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 5px;
+      border: none;
+      border-radius: 4px;
+      background-color: #007BFF;
+      color: #fff;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+    th {
+      background-color: #f0f0f0;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+    li {
+      padding: 5px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #ddd;
+    }
+    .player-item {
+      display: flex;
+      align-items: center;
+      width: 100%;
+    }
+    .player-item span {
+      flex-grow: 1;
+    }
+    .remove-player {
+      background-color: #dc3545;
+    }
+    .remove-player:hover {
+      background-color: #a71d2a;
+    }
+    .team-input {
+      width: 100px;
+      margin-left: 10px;
+    }
+    .score-input {
+      width: 60px;
+    }
+    #saveLoad {
+      text-align: center;
+    }
+    #loadGameInput {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="gameSetup">
+    <h1>Card Game Score Tracker</h1>
+    <label>
+      Game Type:
+      <select id="gameTypeSelect">
+        <option value="Nertz">Nertz</option>
+        <option value="Points">Points</option>
+        <option value="Declare">Declare</option>
+        <option value="Monikers">Monikers</option>
+      </select>
+    </label>
+    <label>
+      <input type="checkbox" id="teamModeCheckbox"> Team Mode
+    </label>
+  </div>
+
+  <div class="container" id="playerManagement">
+    <h2>Players</h2>
+    <input type="text" id="playerNameInput" placeholder="Player Name">
+    <button id="addPlayerBtn">Add Player</button>
+    <ul id="playersList"></ul>
+  </div>
+
+  <div class="container" id="roundManagement">
+    <h2>Rounds</h2>
+    <button id="addRoundBtn">Add Round</button>
+    <table id="roundsTable"></table>
+  </div>
+
+  <div class="container" id="scoreBoard">
+    <h2>Player Scores & Ranking</h2>
+    <table id="scoresTable"></table>
+  </div>
+
+  <div class="container" id="teamScores" style="display: none;">
+    <h2>Team Scores & Ranking</h2>
+    <table id="teamScoresTable"></table>
+  </div>
+
+  <div class="container" id="saveLoad">
+    <h2>Save/Load Game</h2>
+    <button id="saveGameBtn">Save Game</button>
+    <br>
+    <input type="file" id="loadGameInput">
+  </div>
+
+  <script>
+    // Global game state
+    let gameState = {
+      gameType: "Nertz",
+      teamMode: false,
+      players: [], // Each player: { id, name, team }
+      rounds: []   // Each round: { roundNumber, scores: { playerId: score } }
+    };
+    let playerIdCounter = 1;  // To assign unique ids
+
+    // Utility function: Re-render everything based on gameState
+    function renderAll() {
+      renderPlayersList();
+      renderRoundsTable();
+      renderScoresTable();
+      renderTeamScoresTable();
+    }
+
+    // Update game type based on select box
+    document.getElementById("gameTypeSelect").addEventListener("change", function() {
+      gameState.gameType = this.value;
+    });
+
+    // Toggle team mode
+    document.getElementById("teamModeCheckbox").addEventListener("change", function() {
+      gameState.teamMode = this.checked;
+      // Show/hide team score section
+      document.getElementById("teamScores").style.display = gameState.teamMode ? "block" : "none";
+      renderPlayersList();
+      renderScoresTable();
+      renderTeamScoresTable();
+    });
+
+    // Add Player
+    document.getElementById("addPlayerBtn").addEventListener("click", function() {
+      const playerNameInput = document.getElementById("playerNameInput");
+      const name = playerNameInput.value.trim();
+      if (!name) {
+        alert("Please enter a player name.");
+        return;
+      }
+      const player = { id: playerIdCounter++, name: name, team: "" };
+      gameState.players.push(player);
+      // For each existing round, add a default score (0) for the new player.
+      gameState.rounds.forEach(round => {
+        round.scores[player.id] = 0;
+      });
+      playerNameInput.value = "";
+      renderAll();
+    });
+
+    // Remove Player by id
+    function removePlayer(playerId) {
+      gameState.players = gameState.players.filter(p => p.id !== playerId);
+      // Also remove player scores from each round
+      gameState.rounds.forEach(round => {
+        delete round.scores[playerId];
+      });
+      renderAll();
+    }
+
+    // Render players list with remove buttons and (if team mode) team input fields.
+    function renderPlayersList() {
+      const playersList = document.getElementById("playersList");
+      playersList.innerHTML = "";
+      gameState.players.forEach(player => {
+        const li = document.createElement("li");
+        li.className = "player-item";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = player.name;
+        li.appendChild(nameSpan);
+
+        if (gameState.teamMode) {
+          // Add team name input field
+          const teamInput = document.createElement("input");
+          teamInput.type = "text";
+          teamInput.placeholder = "Team";
+          teamInput.value = player.team;
+          teamInput.className = "team-input";
+          teamInput.addEventListener("change", function() {
+            player.team = this.value.trim();
+            renderTeamScoresTable();
+          });
+          li.appendChild(teamInput);
+        }
+
+        // Remove button
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = "Remove";
+        removeBtn.className = "remove-player";
+        removeBtn.addEventListener("click", function() {
+          if (confirm(`Remove player "${player.name}"?`)) {
+            removePlayer(player.id);
+          }
+        });
+        li.appendChild(removeBtn);
+
+        playersList.appendChild(li);
+      });
+    }
+
+    // Add Round
+    document.getElementById("addRoundBtn").addEventListener("click", function() {
+      if (gameState.players.length === 0) {
+        alert("Please add players before adding a round.");
+        return;
+      }
+      const roundNumber = gameState.rounds.length + 1;
+      const scores = {};
+      gameState.players.forEach(player => {
+        scores[player.id] = 0;
+      });
+      gameState.rounds.push({ roundNumber, scores });
+      renderRoundsTable();
+      renderScoresTable();
+      renderTeamScoresTable();
+    });
+
+    // Render rounds table with an input for each player's score per round.
+    function renderRoundsTable() {
+      const table = document.getElementById("roundsTable");
+      table.innerHTML = "";
+      // Only render if there is at least one round
+      if (gameState.rounds.length === 0) return;
+
+      // Create header row: Round # + one column per player
+      const headerRow = document.createElement("tr");
+      const thRound = document.createElement("th");
+      thRound.textContent = "Round";
+      headerRow.appendChild(thRound);
+      gameState.players.forEach(player => {
+        const th = document.createElement("th");
+        th.textContent = player.name;
+        headerRow.appendChild(th);
+      });
+      table.appendChild(headerRow);
+
+      // Create a row for each round
+      gameState.rounds.forEach((round, roundIndex) => {
+        const tr = document.createElement("tr");
+        const tdRound = document.createElement("td");
+        tdRound.textContent = round.roundNumber;
+        tr.appendChild(tdRound);
+        gameState.players.forEach(player => {
+          const td = document.createElement("td");
+          const input = document.createElement("input");
+          input.type = "number";
+          input.value = round.scores[player.id] !== undefined ? round.scores[player.id] : 0;
+          input.className = "score-input";
+          input.addEventListener("change", function() {
+            round.scores[player.id] = parseFloat(this.value) || 0;
+            renderScoresTable();
+            renderTeamScoresTable();
+          });
+          td.appendChild(input);
+          tr.appendChild(td);
+        });
+        table.appendChild(tr);
+      });
+    }
+
+    // Compute total scores per player
+    function computePlayerTotals() {
+      const totals = {};
+      gameState.players.forEach(player => {
+        totals[player.id] = 0;
+      });
+      gameState.rounds.forEach(round => {
+        gameState.players.forEach(player => {
+          totals[player.id] += parseFloat(round.scores[player.id]) || 0;
+        });
+      });
+      return totals;
+    }
+
+    // Render individual scores and ranking table
+    function renderScoresTable() {
+      const table = document.getElementById("scoresTable");
+      table.innerHTML = "";
+      if (gameState.players.length === 0) {
+        table.innerHTML = "<tr><td>No players added yet.</td></tr>";
+        return;
+      }
+      const totals = computePlayerTotals();
+      // Create an array of players with totals for ranking
+      const ranking = gameState.players.map(player => ({
+        id: player.id,
+        name: player.name,
+        team: player.team,
+        total: totals[player.id]
+      }));
+      // Sort descending (highest total first)
+      ranking.sort((a, b) => b.total - a.total);
+
+      // Header row
+      const headerRow = document.createElement("tr");
+      const headers = ["Rank", "Player", "Score"];
+      if (gameState.teamMode) headers.push("Team");
+      headers.forEach(text => {
+        const th = document.createElement("th");
+        th.textContent = text;
+        headerRow.appendChild(th);
+      });
+      table.appendChild(headerRow);
+
+      // Rows
+      ranking.forEach((player, index) => {
+        const tr = document.createElement("tr");
+        const tdRank = document.createElement("td");
+        tdRank.textContent = index + 1;
+        tr.appendChild(tdRank);
+        const tdName = document.createElement("td");
+        tdName.textContent = player.name;
+        tr.appendChild(tdName);
+        const tdScore = document.createElement("td");
+        tdScore.textContent = player.total;
+        tr.appendChild(tdScore);
+        if (gameState.teamMode) {
+          const tdTeam = document.createElement("td");
+          tdTeam.textContent = player.team || "-";
+          tr.appendChild(tdTeam);
+        }
+        table.appendChild(tr);
+      });
+    }
+
+    // Compute team totals if team mode is enabled.
+    function computeTeamTotals() {
+      const teamTotals = {};
+      gameState.players.forEach(player => {
+        const teamName = player.team.trim() || "No Team";
+        if (!teamTotals[teamName]) teamTotals[teamName] = 0;
+      });
+      const totals = computePlayerTotals();
+      gameState.players.forEach(player => {
+        const teamName = player.team.trim() || "No Team";
+        teamTotals[teamName] += totals[player.id];
+      });
+      return teamTotals;
+    }
+
+    // Render team scores table (only visible if team mode is enabled)
+    function renderTeamScoresTable() {
+      if (!gameState.teamMode) return;
+      const table = document.getElementById("teamScoresTable");
+      table.innerHTML = "";
+      const teamTotals = computeTeamTotals();
+      // Create an array for sorting
+      const teams = [];
+      for (let team in teamTotals) {
+        teams.push({ team, total: teamTotals[team] });
+      }
+      teams.sort((a, b) => b.total - a.total);
+      // Header row
+      const headerRow = document.createElement("tr");
+      ["Rank", "Team", "Total Score"].forEach(text => {
+        const th = document.createElement("th");
+        th.textContent = text;
+        headerRow.appendChild(th);
+      });
+      table.appendChild(headerRow);
+      // Rows
+      teams.forEach((t, index) => {
+        const tr = document.createElement("tr");
+        const tdRank = document.createElement("td");
+        tdRank.textContent = index + 1;
+        tr.appendChild(tdRank);
+        const tdTeam = document.createElement("td");
+        tdTeam.textContent = t.team;
+        tr.appendChild(tdTeam);
+        const tdTotal = document.createElement("td");
+        tdTotal.textContent = t.total;
+        tr.appendChild(tdTotal);
+        table.appendChild(tr);
+      });
+    }
+
+    // ---------------------------
+    // Saving and Loading Functions
+    // ---------------------------
+
+    // When saving, we output a CSV with our custom format.
+    document.getElementById("saveGameBtn").addEventListener("click", function() {
+      let csvContent = "";
+      // Header metadata: Game type and team mode
+      csvContent += "GameType," + gameState.gameType + "\n";
+      csvContent += "TeamMode," + gameState.teamMode + "\n\n";
+      
+      // Players section
+      csvContent += "Players\n";
+      csvContent += "id,name,team\n";
+      gameState.players.forEach(player => {
+        csvContent += `${player.id},${player.name},${player.team}\n`;
+      });
+      csvContent += "\n";
+      
+      // Rounds section
+      csvContent += "Rounds\n";
+      // Header: "Round" then list of player ids in order
+      csvContent += "Round";
+      gameState.players.forEach(player => {
+        csvContent += "," + player.id;
+      });
+      csvContent += "\n";
+      gameState.rounds.forEach(round => {
+        csvContent += round.roundNumber;
+        gameState.players.forEach(player => {
+          csvContent += "," + (round.scores[player.id] !== undefined ? round.scores[player.id] : 0);
+        });
+        csvContent += "\n";
+      });
+      
+      // Trigger file download
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "game_state.csv";
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    // Load game functionality
+    document.getElementById("loadGameInput").addEventListener("change", function(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const content = e.target.result;
+        loadGameFromCSV(content);
+      };
+      reader.readAsText(file);
+    });
+
+    // Parse our custom CSV format and update gameState
+    function loadGameFromCSV(csvText) {
+      try {
+        const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== "");
+        let index = 0;
+        
+        // Read metadata
+        const gameTypeLine = lines[index++].split(",");
+        const teamModeLine = lines[index++].split(",");
+        gameState.gameType = gameTypeLine[1] || "Nertz";
+        gameState.teamMode = (teamModeLine[1] === "true");
+        // Update team mode checkbox
+        document.getElementById("teamModeCheckbox").checked = gameState.teamMode;
+        
+        // Skip to "Players"
+        while (index < lines.length && lines[index] !== "Players") index++;
+        index++; // skip "Players" line
+        // Next line should be header "id,name,team"
+        index++;
+        // Read players until an empty line or until "Rounds"
+        gameState.players = [];
+        while (index < lines.length && lines[index] !== "Rounds") {
+          const parts = lines[index].split(",");
+          if (parts.length >= 3) {
+            const player = {
+              id: parseInt(parts[0]),
+              name: parts[1],
+              team: parts.slice(2).join(",") // in case team name contains commas
+            };
+            gameState.players.push(player);
+          }
+          index++;
+        }
+        // Update playerIdCounter to avoid duplicate ids
+        playerIdCounter = gameState.players.reduce((max, p) => Math.max(max, p.id), 0) + 1;
+        
+        // Now read rounds
+        while (index < lines.length && lines[index] !== "Rounds") index++;
+        if (index < lines.length && lines[index] === "Rounds") {
+          index++;
+          // The next line is header row: "Round,<playerId>,..."
+          const headerParts = lines[index++].split(",");
+          // The rest of the lines are rounds data.
+          gameState.rounds = [];
+          while (index < lines.length) {
+            const parts = lines[index].split(",");
+            if (parts.length >= 1) {
+              const roundNumber = parseInt(parts[0]);
+              const scores = {};
+              // Assuming players are in the same order as headerParts
+              for (let i = 1; i < parts.length; i++) {
+                const pid = parseInt(headerParts[i]);
+                scores[pid] = parseFloat(parts[i]) || 0;
+              }
+              gameState.rounds.push({ roundNumber, scores });
+            }
+            index++;
+          }
+        }
+        renderAll();
+        alert("Game loaded successfully!");
+      } catch (error) {
+        console.error("Error loading game:", error);
+        alert("Failed to load game. Please check the file format.");
+      }
+    }
+
+    // Initial render
+    renderAll();
+  </script>
+</body>
+</html>
+
